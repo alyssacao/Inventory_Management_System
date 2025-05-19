@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Inventory Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    select, input, button { margin: 5px; padding: 5px; }
+    .section { display: none; margin-top: 20px; }
+    .active { display: block; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h2>Inventory Management Dashboard</h2>
+
+  <label for="action">Choose Action:</label>
+  <select id="action" onchange="onActionChange()">
+    <option value="">-- Select --</option>
+    <option value="create">Create</option>
+    <option value="read">Read</option>
+    <option value="update">Update</option>
+    <option value="delete">Delete</option>
+    <option value="report">Reports</option>
+  </select>
+
+  <div id="table-selection" style="margin-top: 10px; display:none;">
+    <label for="table">Choose Table:</label>
+    <select id="table" onchange="onTableSelect()"></select>
+  </div>
+
+  <div id="report-selection" style="margin-top: 10px; display:none;">
+    <label for="report-select">Select Report:</label>
+    <select id="report-select">
+      <option value="top_inventory_and_sales">Top products with high sales and still in inventory</option>
+      <option value="products_not_ordered">Products that have never been ordered by any customer</option>
+      <option value="sales_summary">Monthly sales summary</option>
+      <option value="customer_rank">Customer Ranking by Total Spending</option>
+      <option value="top_selling">Top-selling Products This Month</option>
+      <option value="expensive_products_than_garden">Products that are more expensive than all products in Garden category</option>
+    </select>
+    <button onclick="runReport()">Run Report</button>
+  </div>
+
+  <div id="create-section" class="section"></div>
+  <div id="read-section" class="section"></div>
+  <div id="update-section" class="section"></div>
+  <div id="delete-section" class="section"></div>
+  <div id="report-section" class="section"></div>
+
+  <script>
+    const actionSelect = document.getElementById("action");
+    const tableSelect = document.getElementById("table");
+    const tableDiv = document.getElementById("table-selection");
+    const reportDiv = document.getElementById("report-selection");
+
+    function onActionChange() {
+      hideAllSections();
+      document.getElementById("report-section").innerHTML = "";
+      const action = actionSelect.value;
+      if (!action) return;
+
+     if (action === "report") {
+        reportDiv.style.display = "block";
+      } else {
+        tableDiv.style.display = "block";
+        fetch("/get_tables")
+          .then(res => res.json())
+          .then(data => {
+            tableSelect.innerHTML = data.map(t => `<option value="${t}">${t}</option>`).join('');
+          });
+      } 
+      
+    }
+
+    function onTableSelect() {
+      hideAllSections();
+      const action = actionSelect.value;
+      const table = tableSelect.value;
+      if (!table) return;
+      if (action === 'create') fetchCreateForm(table);
+      else if (action === 'read') fetchTableData(table);
+      else if (action === 'update') fetchUpdateForm(table);
+      else if (action === 'delete') fetchDeleteForm(table);
+    }
+
+    function hideAllSections() {
+      document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+      tableDiv.style.display = "none";
+      reportDiv.style.display = "none";
+    }
+
+    function fetchCreateForm(table) {
+      fetch(`/table_metadata/${table}`)
+        .then(res => res.json())
+        .then(cols => {
+          const form = cols.map(col => `<label>${col.column_name}: <input name="${col.column_name}" /></label>`).join('<br>');
+          document.getElementById("create-section").innerHTML = `${form}<br><button onclick="submitCreate('${table}')">Add Row</button>`;
+          document.getElementById("create-section").classList.add("active");
+        });
+    }
+
+    function submitCreate(table) {
+      const inputs = document.querySelectorAll("#create-section input");
+      const data = {};
+      inputs.forEach(input => data[input.name] = input.value);
+      fetch(`/create/${table}`, {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).then(res => res.text()).then(alert);
+    }
+
+    function fetchTableData(table) {
+      fetch(`/read/${table}`)
+        .then(res => res.json())
+        .then(data => {
+          const section = document.getElementById("read-section");
+          if (!data.length) return section.innerHTML = "<p>No data.</p>";
+          const headers = Object.keys(data[0]);
+          section.innerHTML = `<table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+            ${data.map(row => `<tr>${headers.map(h => `<td>${row[h]}</td>`).join('')}</tr>`).join('')}</table>`;
+          section.classList.add("active");
+        });
+    }
+
+    function fetchUpdateForm(table) {
+      fetch(`/table_metadata/${table}`)
+        .then(res => res.json())
+        .then(cols => {
+          let html = `<p>Choose column to identify row:</p>
+            <select id="id_column">${cols.map(c => `<option value="${c.column_name}">${c.column_name}</option>`)}</select>
+            <input id="id_value" placeholder="Value" />
+            <p>Choose column to update:</p>
+            <select id="update_column">${cols.map(c => `<option value="${c.column_name}">${c.column_name}</option>`)}</select>
+            <input id="update_value" placeholder="New Value" />
+            <br><button onclick="submitUpdate('${table}')">Update Row</button>`;
+          document.getElementById("update-section").innerHTML = html;
+          document.getElementById("update-section").classList.add("active");
+        });
+    }
+
+    function submitUpdate(table) {
+      const id_col = document.getElementById("id_column").value;
+      const id_val = document.getElementById("id_value").value;
+      const upd_col = document.getElementById("update_column").value;
+      const upd_val = document.getElementById("update_value").value;
+      fetch(`/update/${table}`, {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_col, id_val, upd_col, upd_val })
+      }).then(res => res.text()).then(alert);
+    }
+
+    function fetchDeleteForm(table) {
+      fetch(`/table_metadata/${table}`)
+        .then(res => res.json())
+        .then(cols => {
+          let html = `<p>Choose column to identify row:</p>
+            <select id="del_column">${cols.map(c => `<option value="${c.column_name}">${c.column_name}</option>`)}</select>
+            <input id="del_value" placeholder="Value" />
+            <br><button onclick="submitDelete('${table}')">Delete Row</button>`;
+          document.getElementById("delete-section").innerHTML = html;
+          document.getElementById("delete-section").classList.add("active");
+        });
+    }
+
+    function submitDelete(table) {
+      const col = document.getElementById("del_column").value;
+      const val = document.getElementById("del_value").value;
+      fetch(`/delete/${table}`, {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ col, val })
+      }).then(res => res.text()).then(alert);
+    }
+
+    function runReport() {
+        const reportName = document.getElementById("report-select").value;
+        console.log("Running report:", reportName); // Debug log
+      
+        fetch(`/report/${reportName}`)
+          .then(res => {
+            console.log("Response status:", res.status); // Debug
+            return res.json();
+          })
+          .then(data => {
+            console.log("Received data:", data); // Debug
+            const section = document.getElementById("report-section");
+            if (!data.length) {
+              section.innerHTML = "<p>No report data available.</p>";
+            } else {
+              const headers = Object.keys(data[0]);
+              section.innerHTML = `<table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                ${data.map(row => `<tr>${headers.map(h => `<td>${row[h]}</td>`).join('')}</tr>`).join('')}</table>`;
+            }
+            section.style.display = "block"; // Ensure it's visible
+          })
+          .catch(err => {
+            console.error("Fetch error:", err); // Debug error
+            const section = document.getElementById("report-section");
+            section.innerHTML = "<p>Error loading report.</p>";
+            section.style.display = "block";
+          });
+      }
+  </script>
+</body>
+</html>
